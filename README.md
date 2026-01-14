@@ -1,2 +1,3 @@
-# sentiment-prototype
-A tool to analyze the sentiment (for example: stock tickers) on Reddit
+# sentiment-alpha
+
+CLI Python tool to track market sentiment on Reddit.
