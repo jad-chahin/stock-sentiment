@@ -52,4 +52,4 @@ python main.py
 ```
 
 ***You will need to create a reddit client [here](https://www.reddit.com/prefs/apps)***
-***You NEED OpenAI API access as of v1.0 but that is changing in the next version***
+***You NEED OpenAI API access as of v1.0***
