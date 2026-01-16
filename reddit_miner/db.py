@@ -304,6 +304,19 @@ def get_latest_analysis_tag(conn: sqlite3.Connection) -> str | None:
 
     return None
 
+def get_latest_model_for_tag(conn: sqlite3.Connection, *, analysis_tag: str) -> str | None:
+    cur = conn.execute("""
+    SELECT model
+    FROM comment_analysis
+    WHERE analysis_tag = ?
+    ORDER BY analyzed_at DESC
+    LIMIT 1
+    """, (analysis_tag,))
+    row = cur.fetchone()
+    if row and row[0]:
+        return row[0]
+    return None
+
 def fetch_distinct_mentioned_tickers(
     conn: sqlite3.Connection,
     *,

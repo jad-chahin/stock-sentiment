@@ -250,17 +250,14 @@ def _report_flow() -> None:
         return
 
     rows = fetch_ticker_summary(conn, analysis_tag=tag, subreddits=None, limit=500)
+    model = dbmod.get_latest_model_for_tag(conn, analysis_tag=tag) or "-"
 
     summary = {
         "db_path": cfg.db_path,
         "subreddits": cfg.subreddits,
         "listing": cfg.listing,
-        "post_limit": cfg.post_limit,
-        "max_comments_per_post": cfg.max_comments_per_post,
         "analysis_tag": tag,
-        "model": "-",
-        "saved": "-",
-        "analyzed_model_calls": "-",
+        "model": model,
     }
     print_report_rich(summary=summary, rows=rows, top_n=cfg.top_n)
 
