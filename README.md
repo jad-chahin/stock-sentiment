@@ -1,4 +1,6 @@
-# sentiment-alpha
+# stock-sentiment
+
+[![Release](https://img.shields.io/badge/release-v1.0.0-blue)](https://github.com/jad-chahin/stock-sentiment/releases/tag/v1.0.0)
 
 Pulls data (from Reddit), processes it, and produces sentiment/report outputs.
 
@@ -11,8 +13,8 @@ Pulls data (from Reddit), processes it, and produces sentiment/report outputs.
 
 ### 1) Clone and enter the project
 ```bash
-git clone https://github.com/jad-chahin/sentiment-alpha.git
-cd sentiment-alpha
+git clone https://github.com/jad-chahin/stock-sentiment.git
+cd stock-sentiment
 ```
 
 ### 2) Create a virtual environment (recommended)
@@ -52,4 +54,4 @@ python main.py
 ```
 
 ***You will need to create a reddit client [here](https://www.reddit.com/prefs/apps)***.
-***You NEED OpenAI API access as of v1.0.1***.
+***You NEED OpenAI API access as of v1.0.0***.
