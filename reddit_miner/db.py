@@ -4,13 +4,13 @@ from typing import Iterable, Optional
 
 CURRENT_ANALYSIS_TAG_KEY = "current_analysis_tag"
 
-
 def connect(db_path: str) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA synchronous=NORMAL;")
+    conn.execute("PRAGMA temp_store=MEMORY;")
+    conn.execute("PRAGMA cache_size=-20000;")
     return conn
-
 
 def init_db(conn: sqlite3.Connection) -> None:
     conn.execute("""
@@ -32,7 +32,7 @@ def init_db(conn: sqlite3.Connection) -> None:
         comment_id TEXT NOT NULL,
         model TEXT NOT NULL,
         analyzed_at INTEGER NOT NULL,
-        status TEXT NOT NULL,   -- ok | error | skipped
+        status TEXT NOT NULL,
         error TEXT,
         PRIMARY KEY (analysis_tag, comment_id)
     )
@@ -50,7 +50,6 @@ def init_db(conn: sqlite3.Connection) -> None:
     )
     """)
 
-    # App state (e.g., currently selected analysis tag)
     conn.execute("""
     CREATE TABLE IF NOT EXISTS app_state (
         key TEXT PRIMARY KEY,
@@ -59,9 +58,10 @@ def init_db(conn: sqlite3.Connection) -> None:
     """)
 
     conn.execute("CREATE INDEX IF NOT EXISTS idx_comments_subreddit_created ON comments(subreddit, created_utc)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_comments_created ON comments(created_utc)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_comment_analysis_tag_status ON comment_analysis(analysis_tag, status)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_mentions_tag_ticker ON mentions(analysis_tag, ticker)")
     conn.commit()
-
 
 def set_app_state(conn: sqlite3.Connection, *, key: str, value: str) -> None:
     conn.execute(
@@ -70,7 +70,6 @@ def set_app_state(conn: sqlite3.Connection, *, key: str, value: str) -> None:
     )
     conn.commit()
 
-
 def get_app_state(conn: sqlite3.Connection, *, key: str) -> str | None:
     cur = conn.execute("SELECT value FROM app_state WHERE key = ? LIMIT 1", (key,))
     row = cur.fetchone()
@@ -78,14 +77,11 @@ def get_app_state(conn: sqlite3.Connection, *, key: str) -> str | None:
         return str(row[0])
     return None
 
-
 def set_current_analysis_tag(conn: sqlite3.Connection, *, analysis_tag: str) -> None:
     set_app_state(conn, key=CURRENT_ANALYSIS_TAG_KEY, value=analysis_tag)
 
-
 def get_current_analysis_tag(conn: sqlite3.Connection) -> str | None:
     return get_app_state(conn, key=CURRENT_ANALYSIS_TAG_KEY)
-
 
 def save_comment(
     conn: sqlite3.Connection,
@@ -105,6 +101,14 @@ def save_comment(
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (comment_id, subreddit, submission_id, submission_title, author, int(created_utc), int(score), body, now))
 
+def save_comments_bulk(conn: sqlite3.Connection, rows: Iterable[tuple]) -> None:
+    rows_list = list(rows or [])
+    if not rows_list:
+        return
+    conn.executemany("""
+    INSERT OR IGNORE INTO comments(comment_id, subreddit, submission_id, submission_title, author, created_utc, score, body, scraped_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, rows_list)
 
 def mark_analyzed_ok(conn: sqlite3.Connection, *, analysis_tag: str, comment_id: str, model: str) -> None:
     now = int(time.time())
@@ -113,7 +117,6 @@ def mark_analyzed_ok(conn: sqlite3.Connection, *, analysis_tag: str, comment_id:
     VALUES (?, ?, ?, ?, 'ok', NULL)
     """, (analysis_tag, comment_id, model, now))
 
-
 def mark_analyzed_skipped(conn: sqlite3.Connection, *, analysis_tag: str, comment_id: str, model: str) -> None:
     now = int(time.time())
     conn.execute("""
@@ -121,14 +124,12 @@ def mark_analyzed_skipped(conn: sqlite3.Connection, *, analysis_tag: str, commen
     VALUES (?, ?, ?, ?, 'skipped', NULL)
     """, (analysis_tag, comment_id, model, now))
 
-
 def mark_analyzed_error(conn: sqlite3.Connection, *, analysis_tag: str, comment_id: str, model: str, error: str) -> None:
     now = int(time.time())
     conn.execute("""
     INSERT OR REPLACE INTO comment_analysis(analysis_tag, comment_id, model, analyzed_at, status, error)
     VALUES (?, ?, ?, ?, 'error', ?)
     """, (analysis_tag, comment_id, model, now, error[:2000]))
-
 
 def save_mentions(
     conn: sqlite3.Connection,
@@ -143,7 +144,6 @@ def save_mentions(
     INSERT OR REPLACE INTO mentions(analysis_tag, comment_id, ticker, sentiment, model, analyzed_at)
     VALUES (?, ?, ?, ?, ?, ?)
     """, [(analysis_tag, comment_id, t, s, model, now) for (t, s) in sentiment_rows])
-
 
 def fetch_candidates(
     conn: sqlite3.Connection,
@@ -190,7 +190,6 @@ def fetch_candidates(
     cur = conn.execute(sql, params)
     return cur.fetchall()
 
-
 def fetch_sentiment_counts(
     conn: sqlite3.Connection,
     *,
@@ -214,7 +213,6 @@ def fetch_sentiment_counts(
         GROUP BY ticker, sentiment
         """, (analysis_tag,))
     return cur.fetchall()
-
 
 def fetch_ticker_summary(
     conn,
@@ -262,7 +260,6 @@ def fetch_ticker_summary(
         """, (analysis_tag, limit))
     return cur.fetchall()
 
-
 def list_analysis_tags(conn: sqlite3.Connection) -> list[str]:
     cur = conn.execute("""
     SELECT analysis_tag, MAX(analyzed_at) AS last_seen
@@ -283,7 +280,6 @@ def list_analysis_tags(conn: sqlite3.Connection) -> list[str]:
             tags.append(t)
 
     return tags
-
 
 def get_latest_analysis_tag(conn: sqlite3.Connection) -> str | None:
     cur = conn.execute("""
@@ -308,7 +304,6 @@ def get_latest_analysis_tag(conn: sqlite3.Connection) -> str | None:
 
     return None
 
-
 def fetch_distinct_mentioned_tickers(
     conn: sqlite3.Connection,
     *,
@@ -330,7 +325,6 @@ def fetch_distinct_mentioned_tickers(
         WHERE analysis_tag = ?
         """, (analysis_tag,))
     return [r[0] for r in cur.fetchall() if r and r[0]]
-
 
 def delete_mentions_for_tickers(conn: sqlite3.Connection, *, analysis_tag: str, tickers: Iterable[str]) -> int:
     ticker_list = [t for t in dict.fromkeys(tickers) if t]

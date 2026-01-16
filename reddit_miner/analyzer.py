@@ -6,15 +6,12 @@ from openai.types.shared_params.reasoning import Reasoning
 
 Sentiment = Literal["bullish", "bearish", "neutral"]
 
-
 class Mention(BaseModel):
     ticker: str = Field(...)
     sentiment: Sentiment
 
-
 class LineAnalysis(BaseModel):
     mentions: list[Mention] = Field(default_factory=list)
-
 
 SYSTEM_INSTRUCTIONS = """
 TASK: Extract traded equity/ETF tickers mentioned in ONE comment and label sentiment per ticker.
@@ -41,9 +38,7 @@ SENTIMENT RULES:
 4) Negations override: "not bullish", "don't buy", "won't go up" -> bearish; "not bearish" -> bullish
 """.strip()
 
-
 def analyze_comment(client: OpenAI, *, model: str, text: str) -> list[tuple[str, str]]:
-
     if len(text) > 2000:
         text = text[:2000]
 

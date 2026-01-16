@@ -6,7 +6,6 @@ import yfinance as yf
 ENABLE_KEYWORD_SHORTCUT = False
 ENABLE_YFINANCE_VALIDATION = False
 
-# Finance hint words
 _HINT_WORDS_RAW: list[str] = [
     "buy", "buys", "buying", "bought",
     "accumulate", "accumulating", "accumulated",
@@ -28,7 +27,7 @@ _HINT_WORDS_RAW: list[str] = [
     "uptick", "upticks", "green",
     "bullish", "bull", "bulls",
     "outperform", "outperforms", "outperforming", "outperformed",
-    "beat", "beats", "beating", "hold", "holdings"
+    "beat", "beats", "beating", "hold", "holdings",
 
     "sell", "sells", "selling", "sold",
     "dump", "dumps", "dumping", "dumped",
@@ -55,7 +54,6 @@ _HINT_WORDS_RAW: list[str] = [
     "lose", "loses", "losing", "lost"
 ]
 
-
 def _compile_hints(words: list[str]) -> re.Pattern:
     cleaned: list[str] = []
     seen: set[str] = set()
@@ -67,7 +65,6 @@ def _compile_hints(words: list[str]) -> re.Pattern:
         seen.add(w)
         cleaned.append(w)
 
-    # longest-first helps to match more specific tokens first
     cleaned.sort(key=len, reverse=True)
 
     patterns: list[str] = []
@@ -83,14 +80,12 @@ def _compile_hints(words: list[str]) -> re.Pattern:
 
     return re.compile(r"(?i)\b(" + "|".join(patterns) + r")\b")
 
-
 _FINANCE_HINTS = _compile_hints(_HINT_WORDS_RAW)
-
 
 def has_finance_hint(text: str) -> bool:
     return bool(text) and bool(_FINANCE_HINTS.search(text))
 
-
+@lru_cache(maxsize=8192)
 def normalize_ticker(sym: str) -> str:
     sym = (sym or "").strip().upper()
     if not sym:
@@ -99,19 +94,15 @@ def normalize_ticker(sym: str) -> str:
     if sym.startswith("$"):
         sym = sym[1:]
 
-    # strip common exchange prefix like "NASDAQ:" / "NYSE:"
     sym = re.sub(r"^[A-Z]+:", "", sym)
 
-    # keep only allowed chars
     sym = re.sub(r"[^A-Z0-9.\-/]", "", sym)
 
-    # normalize share-class separators
     sym = sym.replace("/", ".")
     if re.fullmatch(r"[A-Z]{1,6}-[A-Z0-9]{1,3}", sym):
         sym = sym.replace("-", ".")
 
     return sym
-
 
 @lru_cache(maxsize=4096)
 def is_real_ticker_yf(t: str) -> bool:
@@ -121,16 +112,17 @@ def is_real_ticker_yf(t: str) -> bool:
     except Exception:
         return False
 
-
 def find_invalid_tickers(tickers: list[str]) -> set[str]:
     if not ENABLE_YFINANCE_VALIDATION:
         return set()
 
     invalid: set[str] = set()
+    seen: set[str] = set()
     for t in tickers:
         tt = normalize_ticker(t)
-        if not tt:
+        if not tt or tt in seen:
             continue
+        seen.add(tt)
         if not is_real_ticker_yf(tt):
             invalid.add(tt)
     return invalid

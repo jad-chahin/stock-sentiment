@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import os
 from dataclasses import dataclass
 from typing import Iterable
 
@@ -14,24 +15,32 @@ from .credentials import get_secret
 from .analyzer import analyze_comment
 from . import ticker as tickermod
 
-
 try:
-    from .progress import ProgressBar  # type: ignore
-except Exception:  # pragma: no cover
-    ProgressBar = None  # type: ignore
+    from .progress import ProgressBar
+except Exception:
+    ProgressBar = None
 
+def _should_abort() -> bool:
+    if os.name != "nt":
+        return False
+    try:
+        import msvcrt
+    except Exception:
+        return False
+    if not msvcrt.kbhit():
+        return False
+    ch = msvcrt.getch()
+    return ch in (b"q", b"Q")
 
 @dataclass
 class AnalyzeOutcome:
     analyzed: int = 0
     errors: int = 0
     analyzed_model_calls: int = 0
-    stopped_reason: str | None = None  # "quota" | "timeout" | "ctrl_c"
-
+    stopped_reason: str | None = None
 
 def _now() -> float:
     return time.monotonic()
-
 
 def _sleep_with_deadline(seconds: float, *, deadline: float | None) -> None:
     if seconds <= 0:
@@ -44,11 +53,9 @@ def _sleep_with_deadline(seconds: float, *, deadline: float | None) -> None:
         return
     time.sleep(min(seconds, remaining))
 
-
 def _is_quota_exhausted(err: Exception) -> bool:
     msg = (str(err) or "").lower()
     return ("insufficient_quota" in msg) or ("quota" in msg and ("exceed" in msg or "exceeded" in msg))
-
 
 def _is_retryable(err: Exception) -> bool:
     return isinstance(
@@ -61,19 +68,13 @@ def _is_retryable(err: Exception) -> bool:
         ),
     )
 
-
 def _is_fatal_auth(err: Exception) -> bool:
     return isinstance(err, (openai.AuthenticationError, openai.PermissionDeniedError))
-
 
 def _backoff_seconds(attempt: int) -> float:
     return min(1.0 * (2 ** attempt), 20.0)
 
-
 def _progress(total: int, prefix: str):
-    """
-    Returns a tiny wrapper with update(i) that won't crash if ProgressBar differs/missing.
-    """
     if ProgressBar is None:
         class _NoPB:
             def update(self, _i: int) -> None:
@@ -96,7 +97,6 @@ def _progress(total: int, prefix: str):
 
     return pb
 
-
 def _build_reddit() -> praw.Reddit:
     cid = get_secret("REDDIT_CLIENT_ID")
     csec = get_secret("REDDIT_CLIENT_SECRET")
@@ -105,12 +105,7 @@ def _build_reddit() -> praw.Reddit:
         raise RuntimeError("Missing Reddit credentials (client_id/client_secret). Use Setup to enter them.")
     return praw.Reddit(client_id=cid, client_secret=csec, user_agent=ua)
 
-
 def _cleanup_invalid_tickers(conn, *, analysis_tag: str) -> int:
-    """
-    If yfinance validation is enabled, delete mentions for tickers that yfinance says are invalid.
-    Runs once per analyze() call, and checks each unique ticker at most once (cached).
-    """
     if not tickermod.ENABLE_YFINANCE_VALIDATION:
         return 0
 
@@ -126,7 +121,6 @@ def _cleanup_invalid_tickers(conn, *, analysis_tag: str) -> int:
     conn.commit()
     return deleted
 
-
 def scrape(
     conn,
     *,
@@ -137,9 +131,6 @@ def scrape(
     max_comments_per_post: int,
     bot_usernames: Iterable[str],
 ) -> int:
-    """
-    Scrape comments into the DB. Safe to Ctrl+C. Returns # comments saved this run.
-    """
     reddit = _build_reddit()
     bots = set(bot_usernames or ())
 
@@ -148,9 +139,13 @@ def scrape(
 
     saved = 0
     posts_done = 0
+    batch = []
+    batch_size = 200
 
     try:
         for sub in subreddits:
+            if _should_abort():
+                raise KeyboardInterrupt
             sr = reddit.subreddit(sub)
 
             if listing == "new":
@@ -163,6 +158,8 @@ def scrape(
                 feed = sr.hot(limit=post_limit)
 
             for submission in feed:
+                if _should_abort():
+                    raise KeyboardInterrupt
                 try:
                     submission.comments.replace_more(limit=more_limit)
                     comments = submission.comments.list()
@@ -172,6 +169,8 @@ def scrape(
                 take = comments[:max_comments_per_post] if max_comments_per_post else comments
 
                 for c in take:
+                    if _should_abort():
+                        raise KeyboardInterrupt
                     try:
                         author = getattr(c, "author", None)
                         author_name = str(author) if author else None
@@ -182,37 +181,56 @@ def scrape(
                         if not body:
                             continue
 
-                        dbmod.save_comment(
-                            conn,
-                            comment_id=str(getattr(c, "id")),
-                            subreddit=str(sub),
-                            submission_id=str(getattr(submission, "id", "")),
-                            submission_title=str(getattr(submission, "title", "") or ""),
-                            author=author_name,
-                            created_utc=int(getattr(c, "created_utc", 0) or 0),
-                            score=int(getattr(c, "score", 0) or 0),
-                            body=body,
+                        now = int(time.time())
+                        batch.append(
+                            (
+                                str(getattr(c, "id")),
+                                str(sub),
+                                str(getattr(submission, "id", "")),
+                                str(getattr(submission, "title", "") or ""),
+                                author_name,
+                                int(getattr(c, "created_utc", 0) or 0),
+                                int(getattr(c, "score", 0) or 0),
+                                body,
+                                now,
+                            )
                         )
                         saved += 1
 
-                        if saved % 50 == 0:
-                            conn.commit()
+                        if len(batch) >= batch_size:
+                            dbmod.save_comments_bulk(conn, batch)
+                            batch.clear()
+                            if saved % 200 == 0:
+                                conn.commit()
                     except Exception:
                         continue
 
                 posts_done += 1
                 pb.update(posts_done)
 
+        if batch:
+            dbmod.save_comments_bulk(conn, batch)
+            batch.clear()
         conn.commit()
         return saved
 
     except KeyboardInterrupt:
+        if batch:
+            dbmod.save_comments_bulk(conn, batch)
+            batch.clear()
         conn.commit()
         return saved
     except (prawcore.exceptions.OAuthException, prawcore.exceptions.ResponseException, prawcore.exceptions.Forbidden):
+        if batch:
+            dbmod.save_comments_bulk(conn, batch)
+            batch.clear()
         conn.commit()
         raise
-
+    finally:
+        try:
+            pb.close()
+        except Exception:
+            pass
 
 def analyze(
     conn,
@@ -225,18 +243,6 @@ def analyze(
     subreddits: tuple[str, ...] | None = None,
     timeout_seconds: int | None = None
 ) -> AnalyzeOutcome:
-    """
-    Analyze up to `limit` comments. Saves progressively. Ctrl+C commits and exits.
-
-    Shortcut mode (--shortcut):
-      - skips OpenAI calls when has_finance_hint(text) is False
-      - still marks comment as analyzed_ok so it won't be revisited
-
-    Validation mode (--validate):
-      - after the run ends, checks each unique ticker once via yfinance
-      - deletes mentions for invalid tickers for this analysis_tag
-    """
-
     outcome = AnalyzeOutcome()
     deadline = _now() + timeout_seconds if timeout_seconds else None
 
@@ -270,6 +276,8 @@ def analyze(
 
     try:
         for idx, (comment_id, body) in enumerate(candidates, start=1):
+            if _should_abort():
+                raise KeyboardInterrupt
             if deadline is not None and _now() >= deadline:
                 outcome.stopped_reason = "timeout"
                 conn.commit()
@@ -282,7 +290,6 @@ def analyze(
                 pb.update(idx)
                 continue
 
-            # --- Shortcut: skip OpenAI if heuristic says "unlikely ticker/finance" ---
             if tickermod.ENABLE_KEYWORD_SHORTCUT and not tickermod.has_finance_hint(text):
                 dbmod.mark_analyzed_ok(conn, analysis_tag=analysis_tag, comment_id=str(comment_id), model=model)
                 outcome.analyzed += 1
@@ -293,6 +300,8 @@ def analyze(
 
             attempt = 0
             while True:
+                if _should_abort():
+                    raise KeyboardInterrupt
                 if deadline is not None and _now() >= deadline:
                     outcome.stopped_reason = "timeout"
                     conn.commit()
@@ -332,7 +341,6 @@ def analyze(
                         raise
 
                     if isinstance(e, openai.RateLimitError) and _is_quota_exhausted(e):
-                        # Store the real message for debugging
                         dbmod.mark_analyzed_error(
                             conn,
                             analysis_tag=analysis_tag,
@@ -374,3 +382,8 @@ def analyze(
         outcome.stopped_reason = "ctrl_c"
         _cleanup_invalid_tickers(conn, analysis_tag=analysis_tag)
         return outcome
+    finally:
+        try:
+            pb.close()
+        except Exception:
+            pass

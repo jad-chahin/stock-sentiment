@@ -3,16 +3,13 @@ from typing import Optional
 
 from . import defaults
 
-
 def _split_list(s: str) -> tuple[str, ...]:
     parts = [p.strip() for p in s.replace(",", " ").split()]
     return tuple(p for p in parts if p)
 
-
 def _prompt_str(label: str, default: str) -> str:
     s = input(f"{label} [{default}]: ").strip()
     return s if s else default
-
 
 def _prompt_int(label: str, default: int, min_value: int | None = None) -> int | None:
     while True:
@@ -28,7 +25,6 @@ def _prompt_int(label: str, default: int, min_value: int | None = None) -> int |
         except ValueError:
             print("Please enter an integer.")
 
-
 def _prompt_optional_int(label: str, default: Optional[int]) -> Optional[int]:
     d = "all" if default is None else str(default)
     while True:
@@ -41,7 +37,6 @@ def _prompt_optional_int(label: str, default: Optional[int]) -> Optional[int]:
             return int(s)
         except ValueError:
             print("Please enter an integer or 'all'.")
-
 
 def _choose_mode() -> tuple[bool, bool]:
     print("\nConfigure settings for:")
@@ -58,10 +53,8 @@ def _choose_mode() -> tuple[bool, bool]:
             return True, True
         print("Choose 1, 2, or 3.")
 
-
 @dataclass
 class RunConfig:
-    # scrape
     db_path: str
     subreddits: tuple[str, ...]
     listing: str
@@ -70,7 +63,6 @@ class RunConfig:
     max_comments_per_post: int
     bot_usernames: tuple[str, ...] = ("AutoModerator", "VisualMod")
 
-    # analyze
     analysis_tag: str = defaults.DEFAULT_ANALYSIS_TAG
     analysis_limit: int = defaults.DEFAULT_ANALYSIS_LIMIT
     model: str = defaults.DEFAULT_OPENAI_MODEL
@@ -95,12 +87,6 @@ class RunConfig:
 
     @staticmethod
     def from_user_input(*, do_scrape: bool | None = None, do_analyze: bool | None = None) -> "RunConfig":
-        """
-        Prompts only for settings relevant to the chosen action(s).
-
-        IMPORTANT: If do_scrape/do_analyze are not provided (None),
-        we prompt for the mode here so we don't accidentally ask for everything.
-        """
         if do_scrape is None or do_analyze is None:
             do_scrape, do_analyze = _choose_mode()
 
@@ -114,7 +100,6 @@ class RunConfig:
         )
         subreddits = _split_list(subs) or defaults.DEFAULT_SUBREDDITS
 
-        # Start from defaults
         listing = defaults.DEFAULT_LISTING
         post_limit = defaults.DEFAULT_POST_LIMIT
         max_comments = defaults.DEFAULT_MAX_COMMENTS_PER_POST
@@ -145,8 +130,6 @@ class RunConfig:
                 defaults.DEFAULT_MAX_REQUESTS_PER_MINUTE,
                 min_value=0,
             )
-            top_n = _prompt_int("Top N to display in report", defaults.DEFAULT_TOP_N, min_value=1)
-
         return RunConfig(
             db_path=db_path,
             subreddits=subreddits,

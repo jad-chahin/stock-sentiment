@@ -5,14 +5,12 @@ from typing import Protocol, runtime_checkable
 
 import praw
 
-
 @runtime_checkable
 class _SubredditLike(Protocol):
     def hot(self, *, limit: int): ...
     def new(self, *, limit: int): ...
     def rising(self, *, limit: int): ...
     def top(self, *, limit: int): ...
-
 
 def get_reddit() -> praw.Reddit:
     cid = os.getenv("REDDIT_CLIENT_ID")
@@ -25,7 +23,6 @@ def get_reddit() -> praw.Reddit:
         )
 
     return praw.Reddit(client_id=cid, client_secret=csec, user_agent=ua)
-
 
 def get_feed(subreddit: _SubredditLike, listing: str, limit: int):
     if listing not in {"hot", "new", "rising", "top"}:
