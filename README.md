@@ -1,8 +1,8 @@
-# stock-sentiment
+# Stock Sentiment
 
 [![Release](https://img.shields.io/badge/release-v1.0.0-blue)](https://github.com/jad-chahin/stock-sentiment/releases/tag/v1.0.0)
 
-Pulls data (from Reddit), processes it, and produces sentiment/report outputs.
+Pulls Reddit discussion data, extracts ticker mentions, and produces sentiment/report outputs.
 
 ## Prerequisites
 
@@ -47,11 +47,15 @@ pip install -r requirements.txt
 
 ### 5) Run
 ```bash
-python main.py
-
---shortcut flag: identify key financial terms before AI analysis to save time and tokens
---validate flag: verify all tickers at the end using Yahoo Finance information
+python main.py [--shortcut] [--validate]
 ```
 
-***You will need to create a reddit client [here](https://www.reddit.com/prefs/apps)***.
-***You NEED OpenAI API access as of v1.0.0***.
+Options:
+
+- `--shortcut`: identify key financial terms before AI analysis to save time and tokens.
+- `--validate`: verify tickers at the end using Yahoo Finance information.
+
+## Credentials
+
+- Create a Reddit client at https://www.reddit.com/prefs/apps.
+- OpenAI API access is required as of `v1.0.0`.
