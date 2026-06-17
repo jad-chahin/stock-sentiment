@@ -1,8 +1,8 @@
-# Stock Sentiment
+# Sentimeter
 
-[![Release](https://img.shields.io/badge/release-v1.0.0-blue)](https://github.com/jad-chahin/stock-sentiment/releases/tag/v1.0.0)
+[![Release](https://img.shields.io/badge/release-v1.0.0-blue)](https://github.com/jad-chahin/sentimeter/releases/tag/v1.0.0)
 
-Pulls Reddit discussion data, extracts ticker mentions, and produces sentiment/report outputs.
+Sentimeter pulls Reddit discussion data, extracts ticker mentions, and produces sentiment/report outputs.
 
 ## Prerequisites
 
@@ -13,8 +13,8 @@ Pulls Reddit discussion data, extracts ticker mentions, and produces sentiment/r
 
 ### 1) Clone and enter the project
 ```bash
-git clone https://github.com/jad-chahin/stock-sentiment.git
-cd stock-sentiment
+git clone https://github.com/jad-chahin/sentimeter.git
+cd sentimeter
 ```
 
 ### 2) Create a virtual environment (recommended)
